@@ -1,43 +1,245 @@
-# Simple workflow for deploying static content to GitHub Pages
-name: Deploy static content to Pages
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heart · I Love You</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0b0b0b;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            background: #0b0b0b;
+            cursor: default;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="heartCanvas"></canvas>
 
-on:
-  # Runs on pushes targeting the default branch
-  push:
-    branches: ["main"]
+    <script>
+        (function() {
+            const canvas = document.getElementById('heartCanvas');
+            const ctx = canvas.getContext('2d');
 
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
+            let W, H, CX, CY;
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+            // heart shape parameters
+            const TEXT = 'I Love You';
+            const TEXT_COLOR = '#ff1a1a';
+            const FONT_WEIGHT = '700';
+            const FONT_FAMILY = "'Segoe UI', 'Arial', system-ui, sans-serif";
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
+            let progress = 0;
+            let animationId = null;
+            let startTime = null;
+            const DURATION = 4200;
 
-jobs:
-  # Single deploy job since we're just deploying
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          # Upload entire repository
-          path: '.'
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+            let heartPoints = [];
+
+            // ---- resize canvas ----
+            function resizeCanvas() {
+                W = window.innerWidth;
+                H = window.innerHeight;
+                canvas.width = W;
+                canvas.height = H;
+                CX = W / 2;
+                CY = H / 2;
+                // rebuild heart points with new dimensions
+                heartPoints = buildHeartPoints(500);
+            }
+
+            // ---- generate heart points ----
+            function buildHeartPoints(count = 500) {
+                const points = [];
+                // محاسبه اسکیل مناسب بر اساس کوچک‌ترین بعد صفحه
+                const scale = Math.min(W, H) / 32;
+                for (let i = 0; i < count; i++) {
+                    const t = (i / count) * 2 * Math.PI;
+                    const rawX = 16 * Math.pow(Math.sin(t), 3);
+                    const rawY = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t);
+                    const px = CX + (rawX * scale);
+                    const py = CY - (rawY * scale);
+                    points.push({ x: px, y: py });
+                }
+                return points;
+            }
+
+            // ---- draw frame ----
+            function drawHeart(progress) {
+                ctx.clearRect(0, 0, W, H);
+
+                // background gradient
+                const grad = ctx.createRadialGradient(CX, CY-20, 40, CX, CY, Math.max(W, H) * 0.7);
+                grad.addColorStop(0, '#1a0f0f');
+                grad.addColorStop(1, '#050303');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, W, H);
+
+                const totalPoints = heartPoints.length;
+                const drawCount = Math.floor(totalPoints * Math.min(progress, 1));
+
+                // ---- place "I Love You" text along the heart path ----
+                if (drawCount > 5) {
+                    const step = 2;
+                    const textPositions = [];
+                    for (let i = 0; i < drawCount; i += step) {
+                        const p = heartPoints[i];
+                        if (p) textPositions.push(p);
+                    }
+
+                    if (textPositions.length < 15 && drawCount > 30) {
+                        textPositions.length = 0;
+                        for (let i = 0; i < drawCount; i += Math.floor(drawCount / 35)) {
+                            const p = heartPoints[i];
+                            if (p) textPositions.push(p);
+                        }
+                    }
+
+                    const maxTextIndex = Math.floor(textPositions.length * Math.min(progress * 1.0, 1));
+                    const visibleTexts = textPositions.slice(0, maxTextIndex);
+
+                    ctx.shadowBlur = 14;
+                    ctx.shadowColor = '#ff1a1a';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+
+                    // محاسبه سایز فونت بر اساس اندازه صفحه با محدودیت
+                    const baseFontSize = Math.min(W, H) / 38;
+                    const maxFontSize = Math.min(W, H) / 20;
+
+                    for (let idx = 0; idx < visibleTexts.length; idx++) {
+                        const pt = visibleTexts[idx];
+                        const dx = pt.x - CX;
+                        const dy = pt.y - CY;
+                        const dist = Math.hypot(dx, dy);
+                        if (dist < 5) continue;
+
+                        const normX = dx / dist;
+                        const normY = dy / dist;
+
+                        // محاسبه آفست با محدودیت برای جلوگیری از خروج از صفحه
+                        const offsetRadius = Math.min(Math.min(W, H) / 32, 28) + 3 * Math.sin(idx * 0.3 + progress * 1.2);
+                        const offsetX = normX * offsetRadius;
+                        const offsetY = normY * offsetRadius;
+
+                        let textX = pt.x + offsetX;
+                        let textY = pt.y + offsetY - 2;
+
+                        // محدود کردن موقعیت متن به داخل صفحه
+                        const margin = 20;
+                        const textWidth = ctx.measureText(TEXT).width || 80;
+                        textX = Math.max(margin, Math.min(W - margin, textX));
+                        textY = Math.max(margin + 10, Math.min(H - margin - 10, textY));
+
+                        const size = Math.min(baseFontSize + 1.5 * Math.sin(idx * 0.5 + progress * 1.8), maxFontSize);
+                        ctx.font = `${FONT_WEIGHT} ${size}px ${FONT_FAMILY}`;
+                        ctx.fillStyle = TEXT_COLOR;
+                        ctx.shadowBlur = 14;
+                        ctx.shadowColor = '#ff3b3b';
+
+                        ctx.fillText(TEXT, textX, textY);
+                    }
+
+                    // floating hearts with boundary check
+                    if (progress > 0.3) {
+                        const extraCount = Math.floor((progress - 0.3) * 28);
+                        for (let i = 0; i < extraCount; i++) {
+                            const t = (i / extraCount) * 2 * Math.PI + progress * 2.5;
+                            const rawX = 16 * Math.pow(Math.sin(t), 3);
+                            const rawY = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t);
+                            const scale = Math.min(W, H) / 32;
+                            let px = CX + (rawX * scale) + 18 * Math.sin(t * 2.5 + progress);
+                            let py = CY - (rawY * scale) + 18 * Math.cos(t * 2 + progress * 2);
+                            
+                            // محدود کردن به داخل صفحه
+                            const margin = 30;
+                            px = Math.max(margin, Math.min(W - margin, px));
+                            py = Math.max(margin, Math.min(H - margin, py));
+                            
+                            const heartSize = Math.min(Math.min(W, H) / 38, 22);
+                            ctx.font = `${heartSize}px ${FONT_FAMILY}`;
+                            ctx.fillStyle = TEXT_COLOR;
+                            ctx.shadowBlur = 18;
+                            ctx.shadowColor = '#ff4d4d';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillText('❤️', px, py);
+                        }
+                    }
+                }
+
+                // ---- big center text ----
+                if (progress > 0.75) {
+                    const alpha = (progress - 0.75) / 0.25;
+                    const centerFontSize = Math.min(Math.min(W, H) / 16, 48);
+                    ctx.shadowBlur = 45;
+                    ctx.shadowColor = '#ff1a1a';
+                    ctx.font = `800 ${centerFontSize}px ${FONT_FAMILY}`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = `rgba(255, 26, 26, ${alpha * 0.9})`;
+                    ctx.fillText('❤️ I Love You ❤️', CX, CY - 6);
+
+                    ctx.shadowBlur = 75;
+                    ctx.shadowColor = '#ff4d4d';
+                    ctx.fillStyle = `rgba(255, 50, 50, ${alpha * 0.25})`;
+                    ctx.fillText('❤️ I Love You ❤️', CX, CY - 6);
+                }
+            }
+
+            // ---- animation loop ----
+            function animate(timestamp) {
+                if (!startTime) startTime = timestamp;
+                const elapsed = timestamp - startTime;
+                const loopProgress = (elapsed % DURATION) / DURATION;
+                const eased = loopProgress < 0.5 
+                    ? 2 * loopProgress * loopProgress 
+                    : 1 - Math.pow(-2 * loopProgress + 2, 2) / 2;
+                progress = eased;
+
+                drawHeart(progress);
+                animationId = requestAnimationFrame(animate);
+            }
+
+            // ---- init ----
+            function init() {
+                resizeCanvas();
+                startTime = null;
+                if (animationId) cancelAnimationFrame(animationId);
+                animationId = requestAnimationFrame(animate);
+            }
+
+            // ---- event listeners ----
+            window.addEventListener('resize', () => {
+                resizeCanvas();
+                startTime = null;
+            });
+
+            canvas.addEventListener('click', () => {
+                startTime = null;
+            });
+
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) startTime = null;
+            });
+
+            init();
+        })();
+    </script>
+</body>
+</html>
